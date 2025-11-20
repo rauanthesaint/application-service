@@ -19,88 +19,91 @@ export class Repository implements IRepository {
     constructor(private database: DatabaseManager) {}
 
     async getApplicationById(id: number): Promise<ApplicationPublic | null> {
-        const applicationQuery = `
-            SELECT * FROM applications WHERE id = $1`;
-        const applicationParams = [id];
+        const query = `
+            SELECT
+    a.id,
+    a.phone,
+    a.comment,
+    a.status,
+    a.created_at,
+    a.updated_at,
+    a.updated_by,
 
-        const application = await this.database.query<Application>(applicationQuery, applicationParams);
+    json_build_object(
+        'first_name', u.first_name,
+        'last_name', u.last_name
+    ) AS user,
 
-        if (application.rows.length === 0) {
-            return null;
-        }
+    CASE 
+        WHEN o.id IS NULL THEN NULL
+        ELSE json_build_object(
+            'uin', o.uin,
+            'name', o.name
+        )
+    END AS organization,
 
-        const loadQuery = `
-            SELECT l.*, lt.* FROM loads l JOIN load_types lt ON lt.id = l.type_id WHERE application_id=$1`;
+    json_build_object(
+        'id', l.id,
+        'weight', l.weight,
+        'length', l.length,
+        'height', l.height,
+        'width', l.width,
+        'volume', l.volume,
+        'co_loading', l.co_loading,
+        'created_at', l.created_at,
+        'updated_at', l.updated_at,
+        'type', json_build_object(
+            'id', lt.id,
+            'name', lt.name
+        )
+    ) AS load,
 
-        const loadResult = await this.database.query<Load & { name: string }>(loadQuery, [id]);
-        if (loadResult.rows.length === 0) {
-            return null;
-        }
-        const load = loadResult.rows[0];
-        const loadPublic: LoadPublic = { type: { id: load.type_id, name: load.name }, ...load };
+    json_build_object(
+        'id', p.id,
+        'currency_id', p.currency_id,
+        'amount', p.amount,
+        'prepayment', p.prepayment,
+        'created_at', p.created_at,
+        'updated_at', p.updated_at,
+        'method', json_build_object(
+            'id', pm.id,
+            'name', pm.name
+        ),
+        'condition', json_build_object(
+            'id', pc.id,
+            'name', pc.name
+        )
+    ) AS payment,
 
-        const transportQuery = `
-            SELECT t.*, tt.* FROM transports t JOIN transport_types tt ON tt.id = t.type_id WHERE application_id=$1`;
+    json_build_object(
+        'id', t.id,
+        'count', t.count,
+        'created_at', t.created_at,
+        'updated_at', t.updated_at,
+        'type', json_build_object(
+            'id', tt.id,
+            'name', tt.name
+        )
+    ) AS transport
 
-        const transportResult = await this.database.query<Transport & { name: string }>(transportQuery, [id]);
-        if (transportResult.rows.length === 0) {
-            return null;
-        }
-        const transport = transportResult.rows[0];
-        const transportPublic: TransportPublic = {
-            type: { id: transport.type_id, name: transport.name },
-            ...transport,
-        };
-        if (transportResult.rows.length === 0) {
-            return null;
-        }
+FROM applications a
+JOIN users u ON u.id = a.user_id
+LEFT JOIN organizations o ON o.id = a.organization_id
+JOIN loads l ON l.application_id = a.id
+JOIN load_types lt ON lt.id = l.type_id
+JOIN payments p ON p.application_id = a.id
+JOIN payment_methods pm ON pm.id = p.method_id
+JOIN payment_conditions pc ON pc.id = p.condition_id
+JOIN transports t ON t.application_id = a.id
+JOIN transport_types tt ON tt.id = t.type_id
 
-        const paymentQuery = `
-            SELECT p.*, pm.name as method_name, pc.name as condition_name FROM payments p 
-            join payment_methods pm on pm.id = p.method_id join payment_conditions pc on pc.id = p.condition_id 
-            where p.application_id = $1`;
-        const paymentResult = await this.database.query<Payment & { condition_name: string; method_name: string }>(
-            paymentQuery,
-            [id]
-        );
-        if (paymentResult.rows.length === 0) {
-            return null;
-        }
-        const payment = paymentResult.rows[0];
-        const paymentPublic: PaymentPublic = {
-            condition: { id: payment.condition_id, name: payment.condition_name },
-            method: { id: payment.method_id, name: payment.method_name },
-            ...payment,
-        };
+WHERE a.id = $1;
+`;
+        const result = await this.database.query(query, [id]);
 
-        const user = await this.database.query<{ last_name: string; first_name: string }>(
-            `
-            SELECT last_name, id, first_name FROM users WHERE id=$1`,
-            [application.rows[0].user_id]
-        );
-        const userResult = user.rows[0];
+        if (result.rows.length === 0) return null;
 
-        let organization;
-        if (application.rows[0].organization_id === null) {
-            organization = null;
-        } else {
-            const organizationResult = await this.database.query<{ uin: string; name: string }>(
-                `SELECT uin, name FROM organizations WHERE id=$1`,
-                [application.rows[0].organization_id]
-            );
-            organization = organizationResult.rows[0];
-        }
-
-        const applicationPublic: ApplicationPublic = {
-            ...application.rows[0],
-            load: loadPublic,
-            transport: transportPublic,
-            payment: paymentPublic,
-            user: { last_name: userResult.last_name, first_name: userResult.first_name },
-            organization: organization,
-        };
-
-        return ApplicationPublicSchema.parse(applicationPublic);
+        return ApplicationPublicSchema.parse(result.rows[0]);
     }
 
     async createApplication(dto: ApplicationDTO): Promise<ApplicationPublic> {
