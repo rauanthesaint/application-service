@@ -1,20 +1,10 @@
 import z from "zod";
-import { IdSchema, DateSchema } from "./base.schema";
+import { IdSchema, DateSchema, User, Organization } from "./base.schema";
 import { LoadPublicSchema, LoadSchemaDTO } from "./Load.schema";
 import { PaymentPublicSchema, PaymentSchemaDTO } from "./Payment.schema";
 import { TransportPublicSchema, TransportSchemaDTO } from "./Transport.schema";
 
 const StatusSchema = z.enum(["draft", "active", "cancelled", "archived"]);
-
-const User = z.object({
-    first_name: z.string().min(1).max(50),
-    last_name: z.string().min(1).max(50),
-});
-
-const Organization = z.object({
-    uin: z.string().max(20),
-    name: z.string().min(1).max(50),
-});
 
 export const ApplicationGeneralSchema = z.object({
     user_id: IdSchema,
@@ -48,3 +38,13 @@ export const ApplicationPublicSchema = ApplicationSchema.extend({
     payment: PaymentPublicSchema,
     transport: TransportPublicSchema,
 }).omit({ user_id: true, organization_id: true });
+
+export const ApplicationFiltersSchema = z
+    .object({
+        status: StatusSchema,
+        user_id: IdSchema,
+        organization_id: IdSchema,
+        page: z.coerce.number().positive(),
+        limit: z.coerce.number().positive().max(100),
+    })
+    .partial();

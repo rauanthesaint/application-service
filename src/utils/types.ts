@@ -1,5 +1,5 @@
-export type Response<T = undefined> = {
+export type Response<T> = {
     success: boolean;
-    payload: T;
+    payload?: T;
     message?: string;
 };
